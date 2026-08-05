@@ -2,7 +2,7 @@
   "name": "GeoJson Tools - Purchasing Dept",
   "short_name": "GeoJson Tools",
   "description": "Pembaca & pembuat GeoJSON dengan luas hektar. Purchasing Dept - Raw Material Team | By AR",
-  "start_url": "./geojson-viewer.html",
+  "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "any",

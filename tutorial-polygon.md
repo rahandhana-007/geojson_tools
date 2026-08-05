@@ -5,7 +5,7 @@ Panduan bertahap menggunakan aplikasi **GeoJson Tools** untuk menggambar wilayah
 ---
 
 ## 1. Yang perlu disiapkan
-- Aplikasi `geojson-viewer.html` (buka di browser, cukup klik dua kali).
+- Aplikasi `index.html` (buka di browser, cukup klik dua kali).
 - Koneksi internet (untuk menampilkan peta & mengambil koordinat dari Google Maps).
 - Daftar koordinat batas wilayah (minimal **3 titik**, idealnya **4 titik atau lebih** agar bentuknya jelas).
 
@@ -47,7 +47,7 @@ Contoh wilayah (sekitar Medan):
 
 ## 4. Buka aplikasi & tempel koordinat
 
-1. Buka `geojson-viewer.html`.
+1. Buka `index.html`.
 2. Di panel kiri, cari bagian **Buat GeoJSON (Maker)**.
 3. Pada bagian **Input Koordinat**, klik kotak **"Banyak koordinat (1 pasang per baris)"**.
 4. Tempel (Ctrl+V) daftar koordinat dari Langkah 3.
