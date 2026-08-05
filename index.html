@@ -135,6 +135,9 @@
       <button id="sampleBtn">Contoh Data</button>
       <button id="clearBtn">Bersihkan</button>
     </div>
+    <div class="row" style="margin-top:8px;">
+      <button id="bsreBtn">🗺️ Load BSRE Geojson</button>
+    </div>
 
     <div class="section">
       <h2>Muat dari URL</h2>
@@ -234,6 +237,7 @@
   </div>
 </div>
 
+<script src="bsre-data.js"></script>
 <script>
 // ---------- Inisialisasi peta ----------
 const map = L.map('map', { zoomControl: true }).setView([0, 0], 2);
@@ -516,6 +520,10 @@ $('urlBtn').addEventListener('click', async () => {
 // ---------- Tombol ----------
 $('clearBtn').addEventListener('click', () => { clearMap(); status(''); });
 $('sampleBtn').addEventListener('click', () => loadSample());
+$('bsreBtn').addEventListener('click', () => {
+  if (window.BSRE_GEOJSON) renderGeoJSON(window.BSRE_GEOJSON, 'BSRE Geojson');
+  else status('Data BSRE tidak tersedia (bsre-data.js tidak dimuat).', 'err');
+});
 
 // ---------- Lokasi Saya (GPS / Geolocation) ----------
 $('myLocBtn').addEventListener('click', () => {
