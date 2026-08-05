@@ -1,0 +1,860 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>GeoJson Tools</title>
+<meta name="theme-color" content="#0f172a" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="GeoJson Tools" />
+<link rel="manifest" href="manifest.json" />
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png" />
+<link rel="apple-touch-icon" href="icon-192.png" />
+
+<!-- Leaflet (CDN) -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<style>
+  :root {
+    --bg: #0f172a;
+    --panel: #1e293b;
+    --panel-2: #334155;
+    --accent: #38bdf8;
+    --accent-2: #22d3ee;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --border: #475569;
+    --ok: #4ade80;
+    --err: #f87171;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg); color: var(--text);
+  }
+  #app { display: flex; height: 100vh; }
+
+  /* Sidebar */
+  #sidebar {
+    width: 340px; min-width: 340px; background: var(--panel);
+    border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; padding: 16px; gap: 14px;
+    overflow-y: auto;
+  }
+  #sidebar h1 { font-size: 18px; margin: 0 0 4px; display: flex; align-items: center; gap: 8px; }
+  #sidebar h1 .dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: #22c55e; box-shadow: 0 0 8px #22c55e;
+    animation: pulseDot 1.4s ease-in-out infinite;
+  }
+  @keyframes pulseDot {
+    0%   { box-shadow: 0 0 0 0 rgba(34,197,94,0.7); opacity: 1; }
+    70%  { box-shadow: 0 0 0 8px rgba(34,197,94,0); opacity: 0.6; }
+    100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); opacity: 1; }
+  }
+  .sub { color: var(--muted); font-size: 12px; margin-top: -6px; }
+
+  .drop {
+    border: 2px dashed var(--border); border-radius: 10px; padding: 18px 12px;
+    text-align: center; cursor: pointer; transition: .15s; background: var(--panel-2);
+  }
+  .drop:hover, .drop.drag { border-color: var(--accent); background: #0b3a4a; }
+  .drop small { color: var(--muted); display: block; margin-top: 6px; }
+
+  .row { display: flex; gap: 8px; }
+  .row > * { flex: 1; }
+  input[type=text], input[type=file] { display: none; }
+  button, .btn {
+    background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 8px; padding: 9px 10px; cursor: pointer; font-size: 13px; transition: .15s;
+  }
+  button:hover, .btn:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: #04293a; border-color: var(--accent); font-weight: 600; }
+  button.primary:hover { background: var(--accent-2); }
+  button.tool { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 9px 10px; cursor: pointer; font-size: 13px; flex: 1 1 45%; }
+  button.tool:hover { border-color: var(--accent); }
+  button.tool.active { background: var(--accent); color: #04293a; border-color: var(--accent); font-weight: 600; }
+
+  .section { background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
+  .section h2 { font-size: 13px; margin: 0 0 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+  .field { display: flex; align-items: center; justify-content: space-between; margin: 8px 0; font-size: 13px; }
+  .field label { color: var(--muted); }
+  input[type=color] { width: 36px; height: 26px; border: none; background: none; cursor: pointer; }
+  input[type=range] { width: 120px; }
+
+  .stat { display: flex; justify-content: space-between; font-size: 13px; padding: 4px 0; border-bottom: 1px solid var(--border); }
+  .stat:last-child { border-bottom: none; }
+  .stat span:last-child { color: var(--accent); font-weight: 600; }
+
+  .layers { font-size: 13px; max-height: 220px; overflow-y: auto; }
+  .layer { display: flex; align-items: center; gap: 8px; padding: 5px 0; }
+  .layer input { accent-color: var(--accent); }
+  .layer .swatch { width: 12px; height: 12px; border-radius: 3px; border: 1px solid #0006; }
+  .layer .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .layer .cnt { color: var(--muted); font-size: 11px; }
+
+  #status { font-size: 12px; padding: 8px 10px; border-radius: 8px; display: none; }
+  #status.ok { display: block; background: #064e3b; color: var(--ok); }
+  #status.err { display: block; background: #7f1d1d; color: var(--err); }
+
+  /* Map */
+  #map { flex: 1; height: 100%; background: #0b1220; }
+  .popup-prop { font-size: 12px; max-height: 220px; overflow: auto; }
+  .popup-prop table { border-collapse: collapse; width: 100%; }
+  .popup-prop td { padding: 3px 6px; border-bottom: 1px solid #ddd; vertical-align: top; }
+  .popup-prop td.k { font-weight: 600; color: #333; white-space: nowrap; }
+  .leaflet-container { background: #0b1220; }
+  .hint { position: absolute; bottom: 12px; left: 12px; z-index: 500; background: #0009; color: #fff; padding: 6px 10px; border-radius: 8px; font-size: 12px; }
+
+  @media (max-width: 720px) {
+    #app { flex-direction: column; }
+    #sidebar { width: 100%; min-width: 0; max-height: 45vh; }
+    #map { flex: 1; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="sidebar">
+    <div>
+      <h1><span class="dot"></span> GeoJson Tools</h1>
+      <div class="sub">Purchasing Dept - Raw Material Team | By AR</div>
+    </div>
+
+    <div class="drop" id="drop">
+      <div>📂 Seret & lepas file GeoJSON ke sini</div>
+      <small>atau klik untuk memilih (.geojson, .json)</small>
+    </div>
+    <input type="file" id="file" accept=".geojson,.json,application/geo+json,application/json" />
+
+    <div class="row">
+      <button id="sampleBtn">Contoh Data</button>
+      <button id="clearBtn">Bersihkan</button>
+    </div>
+
+    <div class="section">
+      <h2>Muat dari URL</h2>
+      <div class="row" style="margin-bottom:8px;">
+        <input type="text" id="urlInput" placeholder="https://.../data.geojson" style="display:block; flex:1; background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:8px; padding:9px;" />
+      </div>
+      <button class="primary" id="urlBtn" style="width:100%;">Muat URL</button>
+    </div>
+
+    <div class="section">
+      <h2>Buat GeoJSON (Maker)</h2>
+      <div class="row" style="flex-wrap:wrap; gap:6px;">
+        <button class="tool active" data-mode="select">🖱️ Pilih</button>
+        <button class="tool" data-mode="point">📍 Titik</button>
+        <button class="tool" data-mode="line">📏 Garis</button>
+        <button class="tool" data-mode="polygon">▱ Polygon</button>
+      </div>
+      <div class="row" style="margin-top:8px;">
+        <button id="undoBtn">↩️ Hapus Terakhir</button>
+        <button id="clearDrawBtn">🗑️ Bersihkan</button>
+      </div>
+      <div class="field" style="margin-top:8px;">
+        <label>Nama fitur</label>
+        <input type="text" id="featName" placeholder="mis. Titik A" style="display:block; flex:1; background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:8px; padding:7px; min-width:0;" />
+      </div>
+
+      <div style="margin-top:10px; border-top:1px solid var(--border); padding-top:10px;">
+        <div style="font-size:12px; color:var(--muted); margin-bottom:6px;">Input Koordinat (1 titik)</div>
+        <div class="row">
+          <input type="text" id="latInput" placeholder="Latitude" style="display:block; flex:1; background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:8px; padding:7px; min-width:0;" />
+          <input type="text" id="lngInput" placeholder="Longitude" style="display:block; flex:1; background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:8px; padding:7px; min-width:0;" />
+        </div>
+        <div class="row" style="margin-top:6px;">
+          <button id="addCoordBtn">➕ Tambah Titik</button>
+          <button id="myLocBtn">📍 Lokasi Saya</button>
+        </div>
+
+        <div style="margin-top:10px;">
+          <div style="font-size:12px; color:var(--muted); margin-bottom:4px;">Banyak koordinat (1 pasang per baris):</div>
+          <textarea id="pasteCoord" rows="3" placeholder="Tempel dari Google Maps, mis:&#10;-6.208763, 106.845630&#10;-6.210000, 106.850000&#10;-6.205000, 106.840000" style="display:block; width:100%; background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:8px; padding:7px; resize:vertical; font-size:12px; min-width:0;"></textarea>
+          <div class="row" style="margin-top:6px;">
+            <button id="pastePointsBtn">📍 Titik</button>
+            <button id="pasteLineBtn">📏 Garis</button>
+            <button id="pastePolyBtn">▱ Polygon</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="field" style="margin-top:8px;">
+        <label>Nama Peta</label>
+        <input type="text" id="mapName" placeholder="mis. Kebun_A" style="display:block; flex:1; background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:8px; padding:7px; min-width:0;" />
+      </div>
+      <button class="primary" id="exportBtn" style="width:100%; margin-top:8px;">⬇️ Unduh GeoJSON</button>
+    </div>
+
+    <div class="section" id="drawListSection" style="display:none;">
+      <h2>Daftar &amp; Properti</h2>
+      <div class="layers" id="drawList"></div>
+    </div>
+
+    <div class="section" id="styleSection" style="display:none;">
+      <h2>Gaya Tampilan</h2>
+      <div class="field">
+        <label>Warna garis/polygon</label>
+        <input type="color" id="color" value="#38bdf8" />
+      </div>
+      <div class="field">
+        <label>Warna isi</label>
+        <input type="color" id="fill" value="#38bdf8" />
+      </div>
+      <div class="field">
+        <label>Ketebalan garis</label>
+        <input type="range" id="weight" min="1" max="8" value="3" />
+      </div>
+      <div class="field">
+        <label>Tingkat isi (opacity)</label>
+        <input type="range" id="fillOp" min="0" max="100" value="35" />
+      </div>
+      <button id="applyStyle" style="width:100%;">Terapkan Gaya</button>
+    </div>
+
+    <div class="section" id="infoSection" style="display:none;">
+      <h2>Informasi</h2>
+      <div id="stats"></div>
+    </div>
+
+    <div class="section" id="layersSection" style="display:none;">
+      <h2>Lapisan (Layer)</h2>
+      <div class="layers" id="layers"></div>
+    </div>
+
+    <div id="status"></div>
+  </div>
+
+  <div id="map">
+    <div class="hint">Klik sebuah fitur pada peta untuk melihat propertinya.</div>
+  </div>
+</div>
+
+<script>
+// ---------- Inisialisasi peta ----------
+const map = L.map('map', { zoomControl: true }).setView([0, 0], 2);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19,
+  attribution: '&copy; OpenStreetMap'
+}).addTo(map);
+
+// ---------- State ----------
+let currentLayer = null;       // L.GeoJSON layer group
+let layerGroups = {};          // nama layer -> sub group (berdasarkan properti)
+let activeStyle = { color:'#38bdf8', fill:'#38bdf8', weight:3, fillOpacity:0.35 };
+
+// ---------- Util ----------
+const $ = id => document.getElementById(id);
+function status(msg, type) {
+  const el = $('status');
+  el.textContent = msg;
+  el.className = type || '';
+}
+
+function geoJSONStyle(feature) {
+  return {
+    color: activeStyle.color,
+    weight: activeStyle.weight,
+    fillColor: activeStyle.fill,
+    fillOpacity: activeStyle.fillOpacity,
+    opacity: 1
+  };
+}
+
+function popupContent(feature) {
+  const p = feature && feature.properties ? feature.properties : {};
+  const keys = Object.keys(p);
+  if (!keys.length) return '<div class="popup-prop"><em>Tanpa properti</em></div>';
+  let html = '<div class="popup-prop"><table>';
+  for (const k of keys) {
+    let v = p[k];
+    if (v === null || v === undefined) v = '';
+    else if (typeof v === 'object') v = JSON.stringify(v);
+    html += `<tr><td class="k">${escapeHtml(k)}</td><td>${escapeHtml(String(v))}</td></tr>`;
+  }
+  html += '</table></div>';
+  return html;
+}
+// Luas polygon dalam hektar (rumus geodesic, hasil m² dibagi 10.000)
+// ring: array [lat, lng] ATAU objek LatLng (lat/lng)
+function polygonAreaHectares(ring) {
+  if (!ring || ring.length < 3) return 0;
+  const rad = Math.PI / 180, R = 6378137; // jari-jari bumi (m)
+  let area = 0;
+  for (let i = 0; i < ring.length; i++) {
+    const p1 = ring[i], p2 = ring[(i + 1) % ring.length];
+    const lat1 = p1.lat !== undefined ? p1.lat : p1[0];
+    const lng1 = p1.lng !== undefined ? p1.lng : p1[1];
+    const lat2 = p2.lat !== undefined ? p2.lat : p2[0];
+    const lng2 = p2.lng !== undefined ? p2.lng : p2[1];
+    area += (lng2 - lng1) * rad * (2 + Math.sin(lat1 * rad) + Math.sin(lat2 * rad));
+  }
+  area = Math.abs(area * R * R / 2);
+  return area / 10000; // m² -> hektar
+}
+
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// ---------- Render GeoJSON ----------
+function renderGeoJSON(geojson, sourceName) {
+  // Validasi dasar
+  if (!geojson || typeof geojson !== 'object' || !geojson.type) {
+    status('Bukan file GeoJSON yang valid (tidak ada properti "type").', 'err');
+    return;
+  }
+
+  // Bersihkan layer lama
+  clearMap();
+
+  currentLayer = L.geoJSON(geojson, {
+    style: geoJSONStyle,
+    pointToLayer: (feature, latlng) => L.circleMarker(latlng, {
+      radius: 6, color: activeStyle.color, weight: activeStyle.weight,
+      fillColor: activeStyle.fill, fillOpacity: 0.9
+    }),
+    onEachFeature: (feature, layer) => {
+      if (feature.geometry && feature.geometry.type === 'Polygon') {
+        const ring = feature.geometry.coordinates[0].map(c => [c[1], c[0]]); // [lng,lat] -> [lat,lng]
+        const ha = polygonAreaHectares(ring);
+        feature.properties = feature.properties || {};
+        feature.properties.luas_ha = +ha.toFixed(2);
+      }
+      layer.bindPopup(popupContent(feature));
+    }
+  });
+
+  // Kelompokkan berdasarkan properti "layer"/"name"/"Layer" kalau ada
+  layerGroups = {};
+  let grouped = false;
+  currentLayer.eachLayer(l => {
+    const p = (l.feature && l.feature.properties) || {};
+    let key = null;
+    for (const cand of ['layer','Layer','name','Name','nama','kategori','category']) {
+      if (p[cand] !== undefined && p[cand] !== null) { key = String(p[cand]); break; }
+    }
+    if (key) {
+      grouped = true;
+      if (!layerGroups[key]) {
+        layerGroups[key] = L.featureGroup();
+        layerGroups[key]._color = randomColor(key);
+      }
+      layerGroups[key].addLayer(l);
+    }
+  });
+
+  if (grouped) {
+    const overlay = {};
+    const colors = {};
+    Object.keys(layerGroups).forEach(k => {
+      colors[k] = layerGroups[k]._color;
+      layerGroups[k].setStyle({
+        color: layerGroups[k]._color,
+        fillColor: layerGroups[k]._color
+      });
+      layerGroups[k].eachLayer(l => {
+        if (l.setStyle) l.setStyle({ color: layerGroups[k]._color, fillColor: layerGroups[k]._color });
+      });
+      layerGroups[k].addTo(map);
+      overlay[k] = layerGroups[k];
+    });
+    L.control.layers(null, overlay, { collapsed: false }).addTo(map);
+    buildLayerList(colors);
+    $('layersSection').style.display = 'block';
+  } else {
+    currentLayer.addTo(map);
+    $('layersSection').style.display = 'none';
+  }
+
+  // Auto-fit
+  try {
+    const bounds = currentLayer.getBounds();
+    if (bounds.isValid()) map.fitBounds(bounds, { padding: [30, 30] });
+  } catch(e) { map.setView([0,0],2); }
+
+  // Statistik
+  const stats = computeStats(geojson);
+  renderStats(stats, sourceName);
+  $('infoSection').style.display = 'block';
+  $('styleSection').style.display = 'block';
+
+  status(`Berhasil memuat: ${stats.total} fitur dari ${sourceName}.`, 'ok');
+}
+
+function renderStats(stats, name) {
+  const el = $('stats');
+  let html = `<div class="stat"><span>Sumber</span><span title="${escapeHtml(name)}">${escapeHtml(name.length>18?name.slice(0,18)+'…':name)}</span></div>`;
+  html += `<div class="stat"><span>Total fitur</span><span>${stats.total}</span></div>`;
+  for (const [t, c] of Object.entries(stats.types)) {
+    html += `<div class="stat"><span>${t}</span><span>${c}</span></div>`;
+  }
+  if (stats.bbox) {
+    html += `<div class="stat"><span>Bounding box</span><span>${stats.bbox.map(n=>n.toFixed(2)).join(', ')}</span></div>`;
+  }
+  if (stats.areaHa && stats.areaHa > 0) {
+    html += `<div class="stat"><span>Total luas polygon</span><span>${stats.areaHa.toFixed(2)} ha</span></div>`;
+  }
+  el.innerHTML = html;
+}
+
+function computeStats(geojson) {
+  const types = {};
+  let total = 0;
+  let areaHa = 0;
+  function walk(g) {
+    if (!g) return;
+    if (g.type === 'Feature') {
+      total++;
+      const gt = g.geometry ? g.geometry.type : 'Unknown';
+      types[gt] = (types[gt]||0)+1;
+      if (g.geometry && g.geometry.type === 'Polygon') {
+        const ring = g.geometry.coordinates[0].map(c => [c[1], c[0]]); // [lng,lat] -> [lat,lng]
+        areaHa += polygonAreaHectares(ring);
+      }
+    } else if (g.type === 'FeatureCollection') {
+      (g.features||[]).forEach(walk);
+    } else if (g.type && g.type.endsWith('Collection')) {
+      (g.geometries||[]).forEach(walk);
+    } else if (g.type) {
+      total++; types[g.type] = (types[g.type]||0)+1;
+    }
+  }
+  walk(geojson);
+  return { total, types, bbox: geojson.bbox, areaHa };
+}
+
+function buildLayerList(colors) {
+  const el = $('layers');
+  el.innerHTML = '';
+  Object.keys(layerGroups).sort().forEach(k => {
+    const count = layerGroups[k].getLayers().length;
+    const row = document.createElement('div');
+    row.className = 'layer';
+    row.innerHTML = `
+      <input type="checkbox" checked data-key="${escapeHtml(k)}" />
+      <span class="swatch" style="background:${colors[k]}"></span>
+      <span class="name" title="${escapeHtml(k)}">${escapeHtml(k)}</span>
+      <span class="cnt">${count}</span>`;
+    row.querySelector('input').addEventListener('change', e => {
+      if (e.target.checked) layerGroups[k].addTo(map);
+      else map.removeLayer(layerGroups[k]);
+    });
+    el.appendChild(row);
+  });
+}
+
+function randomColor(seed) {
+  let h = 0; for (let i=0;i<seed.length;i++) h = (h*31 + seed.charCodeAt(i)) % 360;
+  return `hsl(${h}, 70%, 55%)`;
+}
+
+// ---------- Bersihkan ----------
+function clearMap() {
+  if (currentLayer) { map.removeLayer(currentLayer); currentLayer = null; }
+  // hapus control layers lama
+  map.eachLayer(l => { if (l instanceof L.Control.Layers) map.removeControl(l); });
+  layerGroups = {};
+  $('stats').innerHTML = '';
+  $('layers').innerHTML = '';
+  $('infoSection').style.display = 'none';
+  $('layersSection').style.display = 'none';
+  $('styleSection').style.display = 'none';
+}
+
+// ---------- File input & drag/drop ----------
+const drop = $('drop');
+$('file').addEventListener('change', e => {
+  const f = e.target.files[0];
+  if (f) readFile(f);
+});
+drop.addEventListener('click', () => $('file').click());
+['dragover','dragenter'].forEach(ev => drop.addEventListener(ev, e => {
+  e.preventDefault(); drop.classList.add('drag');
+}));
+['dragleave','drop'].forEach(ev => drop.addEventListener(ev, e => {
+  e.preventDefault(); drop.classList.remove('drag');
+}));
+drop.addEventListener('drop', e => {
+  const f = e.dataTransfer.files[0];
+  if (f) readFile(f);
+});
+
+function readFile(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const data = JSON.parse(reader.result);
+      renderGeoJSON(data, file.name);
+    } catch (err) {
+      status('Gagal mem-parsing JSON: ' + err.message, 'err');
+    }
+  };
+  reader.onerror = () => status('Gagal membaca file.', 'err');
+  reader.readAsText(file);
+}
+
+// ---------- URL ----------
+$('urlBtn').addEventListener('click', async () => {
+  const url = $('urlInput').value.trim();
+  if (!url) { status('Masukkan URL terlebih dahulu.', 'err'); return; }
+  status('Memuat dari URL…');
+  try {
+    const res = await fetch(url, { mode: 'cors' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    renderGeoJSON(data, url.split('/').pop() || url);
+  } catch (err) {
+    status('Gagal memuat URL (mungkin CORS): ' + err.message, 'err');
+  }
+});
+
+// ---------- Tombol ----------
+$('clearBtn').addEventListener('click', () => { clearMap(); status(''); });
+$('sampleBtn').addEventListener('click', () => loadSample());
+
+// ---------- Lokasi Saya (GPS / Geolocation) ----------
+$('myLocBtn').addEventListener('click', () => {
+  if (!navigator.geolocation) { status('Perangkat/browser tidak mendukung Geolocation.', 'err'); return; }
+  status('Mengambil lokasi GPS…');
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      const lat = pos.coords.latitude, lng = pos.coords.longitude;
+      $('latInput').value = lat.toFixed(6);
+      $('lngInput').value = lng.toFixed(6);
+      const name = nextName();
+      const marker = L.circleMarker([lat, lng], {
+        radius: 7, color: '#22c55e', weight: 2, fillColor: '#22c55e', fillOpacity: 0.9
+      });
+      drawnLayer.addLayer(marker);
+      addItem('Point', name, marker);
+      map.setView([lat, lng], Math.max(map.getZoom(), 15));
+      status('Lokasi Anda: (' + lat.toFixed(6) + ', ' + lng.toFixed(6) + ').', 'ok');
+    },
+    err => {
+      let msg = 'Gagal mengambil lokasi.';
+      if (err.code === err.PERMISSION_DENIED) msg = 'Izin lokasi ditolak oleh pengguna.';
+      else if (err.code === err.POSITION_UNAVAILABLE) msg = 'Lokasi GPS tidak tersedia.';
+      else if (err.code === err.TIMEOUT) msg = 'Waktu permintaan lokasi habis.';
+      status(msg, 'err');
+    },
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+  );
+});
+
+// ---------- Gaya ----------
+$('applyStyle').addEventListener('click', () => {
+  activeStyle = {
+    color: $('color').value,
+    fill: $('fill').value,
+    weight: +$('weight').value,
+    fillOpacity: +$('fillOp').value / 100
+  };
+  if (currentLayer) {
+    currentLayer.setStyle(geoJSONStyle);
+    currentLayer.eachLayer(l => {
+      if (l instanceof L.CircleMarker) {
+        l.setStyle({ color: activeStyle.color, fillColor: activeStyle.fill, weight: activeStyle.weight });
+      }
+    });
+  }
+  status('Gaya diterapkan.', 'ok');
+});
+
+// ---------- GeoJSON Maker (gambar di peta) ----------
+let mode = 'select';
+const drawnLayer = L.featureGroup().addTo(map);
+let drawItems = [];      // { id, type, name, layer }
+let tempPoints = [];     // titik sementara untuk garis/polygon
+let tempPreview = null;  // grup preview sementara (garis + vertex)
+let drawCounter = 0;
+
+document.querySelectorAll('.tool').forEach(btn => {
+  btn.addEventListener('click', () => setMode(btn.dataset.mode));
+});
+function setMode(m) {
+  mode = m;
+  document.querySelectorAll('.tool').forEach(b => b.classList.toggle('active', b.dataset.mode === m));
+  clearTemp();
+}
+function clearTemp() {
+  tempPoints = [];
+  if (tempPreview) { map.removeLayer(tempPreview); tempPreview = null; }
+}
+
+map.on('click', e => {
+  if (mode === 'point') addPoint(e.latlng);
+  else if (mode === 'line' || mode === 'polygon') addVertex(e.latlng);
+});
+map.on('dblclick', e => {
+  if (tempPoints.length) tempPoints.pop(); // hapus titik ganda dari double-click
+  if (mode === 'line') finishLine();
+  else if (mode === 'polygon') finishPolygon();
+});
+map.doubleClickZoom.disable();
+
+function addPoint(latlng) {
+  const name = nextName();
+  const marker = L.circleMarker(latlng, {
+    radius: 7, color: '#22c55e', weight: 2, fillColor: '#22c55e', fillOpacity: 0.9
+  });
+  drawnLayer.addLayer(marker);
+  addItem('Point', name, marker);
+}
+function addVertex(latlng) {
+  tempPoints.push(latlng);
+  drawTemp();
+}
+function drawTemp() {
+  if (tempPreview) map.removeLayer(tempPreview);
+  tempPreview = L.layerGroup().addTo(map);
+  if (tempPoints.length >= 2) {
+    L.polyline(tempPoints, { color:'#22c55e', weight:3, dashArray:'6,6' }).addTo(tempPreview);
+  }
+  // tandai tiap vertex
+  tempPoints.forEach(p => L.circleMarker(p, {
+    radius:4, color:'#22c55e', weight:1, fillColor:'#fff', fillOpacity:1
+  }).addTo(tempPreview));
+}
+function finishLine() {
+  if (tempPoints.length < 2) { clearTemp(); return; }
+  const name = nextName();
+  const line = L.polyline(tempPoints, { color:'#22c55e', weight:3 });
+  drawnLayer.addLayer(line);
+  addItem('LineString', name, line);
+  clearTemp();
+  fitDrawn();
+}
+function finishPolygon() {
+  if (tempPoints.length < 3) { clearTemp(); return; }
+  const name = nextName();
+  const poly = L.polygon(tempPoints, { color:'#22c55e', weight:3, fillColor:'#22c55e', fillOpacity:0.3 });
+  drawnLayer.addLayer(poly);
+  addItem('Polygon', name, poly);
+  clearTemp();
+  fitDrawn();
+}
+function nextName() {
+  const v = $('featName').value.trim();
+  if (v) return v;
+  drawCounter++;
+  return 'Fitur ' + drawCounter;
+}
+function addItem(type, name, layer) {
+  layer.feature = { type:'Feature', properties: { name: name } };
+  let area = null;
+  if (type === 'Polygon') {
+    const ring = layer.getLatLngs()[0]; // cincin luar
+    area = polygonAreaHectares(ring);
+    layer.feature.properties.luas_ha = +area.toFixed(2);
+  }
+  layer.bindPopup(popupContent(layer.feature));
+  drawItems.push({ id: Date.now() + Math.random(), type, name, layer, area });
+  renderDrawList();
+  $('drawListSection').style.display = 'block';
+}
+function renderDrawList() {
+  const el = $('drawList');
+  el.innerHTML = '';
+  drawItems.forEach((it, i) => {
+    const row = document.createElement('div');
+    row.className = 'layer';
+    const icon = it.type === 'Point' ? '📍' : it.type === 'LineString' ? '📏' : '▱';
+    const areaTxt = (it.type === 'Polygon' && it.area != null) ? it.area.toFixed(2) + ' ha' : '';
+    row.innerHTML = `
+      <span style="width:18px; text-align:center;">${icon}</span>
+      <input type="text" value="${escapeHtml(it.name)}" data-i="${i}" style="flex:1; background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:6px; padding:5px; min-width:0;" />
+      <span style="color:var(--muted); font-size:11px; min-width:56px; text-align:right;">${areaTxt}</span>
+      <button data-del="${i}" title="Hapus" style="flex:0 0 auto; padding:5px 9px;">✕</button>`;
+    row.querySelector('input').addEventListener('input', e => {
+      const idx = +e.target.dataset.i;
+      drawItems[idx].name = e.target.value;
+      drawItems[idx].layer.feature.properties.name = e.target.value;
+      drawItems[idx].layer.bindPopup(popupContent(drawItems[idx].layer.feature));
+    });
+    row.querySelector('button').addEventListener('click', e => {
+      const idx = +e.target.dataset.del;
+      drawnLayer.removeLayer(drawItems[idx].layer);
+      drawItems.splice(idx, 1);
+      renderDrawList();
+      if (!drawItems.length) $('drawListSection').style.display = 'none';
+    });
+    el.appendChild(row);
+  });
+  // total luas semua polygon
+  const totalHa = drawItems
+    .filter(it => it.type === 'Polygon' && it.area != null)
+    .reduce((s, it) => s + it.area, 0);
+  if (totalHa > 0) {
+    const t = document.createElement('div');
+    t.className = 'stat';
+    t.style.marginTop = '6px';
+    t.innerHTML = `<span>Total luas</span><span>${totalHa.toFixed(2)} ha</span>`;
+    el.appendChild(t);
+  }
+}
+function fitDrawn() {
+  try { const b = drawnLayer.getBounds(); if (b.isValid()) map.fitBounds(b, { padding:[30,30] }); } catch(e) {}
+}
+
+$('undoBtn').addEventListener('click', () => {
+  if (!drawItems.length) return;
+  const it = drawItems.pop();
+  drawnLayer.removeLayer(it.layer);
+  renderDrawList();
+  if (!drawItems.length) $('drawListSection').style.display = 'none';
+});
+$('clearDrawBtn').addEventListener('click', () => {
+  drawnLayer.clearLayers();
+  drawItems = [];
+  renderDrawList();
+  $('drawListSection').style.display = 'none';
+});
+// Penamaan file aman (spasi -> underscore, hapus karakter tak valid)
+function sanitizeFilename(s) {
+  return (s || '').trim()
+    .replace(/[^a-zA-Z0-9 _\-]/g, '')
+    .replace(/\s+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
+$('exportBtn').addEventListener('click', () => {
+  if (!drawItems.length) { status('Belum ada gambaran untuk diekspor.', 'err'); return; }
+  const gj = drawnLayer.toGeoJSON();
+  const rawName = $('mapName').value.trim() || 'hasil';
+  gj.name = rawName;                                  // penamaan pada geojson
+  const safe = sanitizeFilename(rawName) || 'hasil';
+  const fname = safe + '_polygon.geojson';            // nama_peta_polygon.geojson
+  const blob = new Blob([JSON.stringify(gj, null, 2)], { type:'application/geo+json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = fname;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+  status('GeoJSON diunduh: ' + fname + ' (' + drawItems.length + ' fitur).', 'ok');
+});
+
+// ---------- Input koordinat (lat/lng) ----------
+$('addCoordBtn').addEventListener('click', () => {
+  const lat = parseFloat($('latInput').value);
+  const lng = parseFloat($('lngInput').value);
+  if (isNaN(lat) || isNaN(lng)) { status('Latitude/Longitude tidak valid.', 'err'); return; }
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+    status('Nilai di luar rentang (Lat -90..90, Lng -180..180).', 'err'); return;
+  }
+  const name = nextName();
+  const marker = L.circleMarker([lat, lng], {
+    radius: 7, color: '#22c55e', weight: 2, fillColor: '#22c55e', fillOpacity: 0.9
+  });
+  drawnLayer.addLayer(marker);
+  addItem('Point', name, marker);
+  map.setView([lat, lng], Math.max(map.getZoom(), 13));
+  status('Titik ditambahkan di (' + lat + ', ' + lng + ').', 'ok');
+});
+
+// ---------- Koordinat & deteksi tempelan (Google Maps dll.) ----------
+function parseCoordText(t) {
+  t = (t || '').trim();
+  if (!t) return null;
+  // URL Google Maps dengan @lat,lng,zoom  -> @-6.208763,106.845630,15z
+  const at = t.match(/@\s*(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)/);
+  if (at) return [parseFloat(at[1]), parseFloat(at[2])];
+  // ambil semua angka (termasuk desimal & negatif)
+  const nums = (t.match(/-?\d+\.?\d*/g) || []).map(Number).filter(n => !isNaN(n));
+  if (nums.length < 2) return null;
+  let lat = nums[0], lng = nums[1];
+  // deteksi urutan: Google Maps menyalin "lat, lng".
+  // Jika angka pertama di luar rentang latitude (-90..90), berarti urutannya kebalik (lng, lat) -> tukar.
+  if (Math.abs(lat) > 90) { const tmp = lat; lat = lng; lng = tmp; }
+  return [lat, lng];
+}
+// Baca banyak koordinat (1 pasang per baris / dipisahkan ;)
+function parseCoordList(text) {
+  const out = [];
+  const lines = (text || '').split(/[\n;]+/);
+  for (const line of lines) {
+    const c = parseCoordText(line);
+    if (c) {
+      const [lat, lng] = c;
+      if (lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) out.push([lat, lng]);
+    }
+  }
+  return out;
+}
+function addCoordPoint(lat, lng, focus) {
+  const name = nextName();
+  const marker = L.circleMarker([lat, lng], {
+    radius: 7, color: '#22c55e', weight: 2, fillColor: '#22c55e', fillOpacity: 0.9
+  });
+  drawnLayer.addLayer(marker);
+  addItem('Point', name, marker);
+  if (focus) map.setView([lat, lng], Math.max(map.getZoom(), 13));
+  return name;
+}
+
+// Banyak koordinat -> titik
+$('pastePointsBtn').addEventListener('click', () => {
+  const list = parseCoordList($('pasteCoord').value);
+  if (!list.length) { status('Tidak ada koordinat valid yang terbaca.', 'err'); return; }
+  list.forEach(([lat, lng]) => addCoordPoint(lat, lng, false));
+  fitDrawn();
+  status(list.length + ' titik ditambahkan.', 'ok');
+});
+
+// Banyak koordinat -> garis
+$('pasteLineBtn').addEventListener('click', () => {
+  const list = parseCoordList($('pasteCoord').value);
+  if (list.length < 2) { status('Butuh minimal 2 koordinat untuk membuat garis.', 'err'); return; }
+  const name = nextName();
+  const line = L.polyline(list, { color:'#22c55e', weight:3 });
+  drawnLayer.addLayer(line);
+  addItem('LineString', name, line);
+  fitDrawn();
+  status('Garis dibuat dari ' + list.length + ' koordinat.', 'ok');
+});
+
+// Banyak koordinat -> polygon (WILAYAH / AREA)
+$('pastePolyBtn').addEventListener('click', () => {
+  const list = parseCoordList($('pasteCoord').value);
+  if (list.length < 3) { status('Butuh minimal 3 koordinat untuk membuat polygon.', 'err'); return; }
+  const name = nextName();
+  const poly = L.polygon(list, { color:'#22c55e', weight:3, fillColor:'#22c55e', fillOpacity:0.3 });
+  drawnLayer.addLayer(poly);
+  addItem('Polygon', name, poly);
+  fitDrawn();
+  status('Polygon (wilayah) dibuat dari ' + list.length + ' koordinat.', 'ok');
+});
+
+// ---------- Contoh data ----------
+function loadSample() {
+  const sample = {
+    "type": "FeatureCollection",
+    "features": [
+      { "type":"Feature", "properties":{"layer":"Kota","name":"Jakarta"}, "geometry":{"type":"Point","coordinates":[106.8456,-6.2088]} },
+      { "type":"Feature", "properties":{"layer":"Kota","name":"Medan"}, "geometry":{"type":"Point","coordinates":[98.6722,3.5952]} },
+      { "type":"Feature", "properties":{"layer":"Kota","name":"Surabaya"}, "geometry":{"type":"Point","coordinates":[112.7521,-7.2504]} },
+      { "type":"Feature", "properties":{"layer":"Pulau","name":"Sumatra"}, "geometry":{"type":"Polygon","coordinates":[[[95,5],[105,5],[104,-6],[95,-5],[95,5]]]} },
+      { "type":"Feature", "properties":{"layer":"Jalan","name":"Garis Contoh"}, "geometry":{"type":"LineString","coordinates":[[98.67,3.59],[106.84,-6.2],[112.75,-7.25]]} },
+      { "type":"Feature", "properties":{"layer":"Area","name":"Lingkaran Contoh"}, "geometry":{"type":"Polygon","coordinates":[[[106.8,-6.1],[107.0,-6.1],[107.0,-6.3],[106.8,-6.3],[106.8,-6.1]]]} }
+    ]
+  };
+  renderGeoJSON(sample, 'contoh.geojson');
+}
+
+// Tidak ada auto-load: peta terbuka kosong tanpa GeoJSON.
+// Pengguna dapat memuat data lewat tombol "Contoh Data", unggah file, atau URL.
+
+// ---------- PWA: daftarkan service worker (hanya saat di-host via http/https) ----------
+if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  });
+}
+</script>
+</body>
+</html>
