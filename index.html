@@ -56,6 +56,18 @@
     70%  { box-shadow: 0 0 0 8px rgba(34,197,94,0); opacity: 0.6; }
     100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); opacity: 1; }
   }
+  .live-dot { background: transparent; }
+  .live-dot-inner {
+    width: 16px; height: 16px; border-radius: 50%;
+    background: #1a73e8; border: 2px solid #fff;
+    box-shadow: 0 0 0 4px rgba(26,115,232,0.35);
+    animation: livePulse 1.6s ease-out infinite;
+  }
+  @keyframes livePulse {
+    0%   { box-shadow: 0 0 0 0 rgba(26,115,232,0.5); }
+    70%  { box-shadow: 0 0 0 12px rgba(26,115,232,0); }
+    100% { box-shadow: 0 0 0 0 rgba(26,115,232,0); }
+  }
   .sub { color: var(--muted); font-size: 12px; margin-top: -6px; }
 
   .drop {
@@ -602,39 +614,61 @@ $('addToListBtn').addEventListener('click', () => {
 // ---------- Lacak Lokasi Realtime (mirip Google Maps) ----------
 let watching = false;
 let firstFix = true;
+let watchId = null;
+let liveMarker = null, liveCircle = null;
 function updateWatchBtn() {
   const b = $('liveTrackBtn');
   if (watching) { b.textContent = '⏹ Stop Lacak'; b.classList.add('active'); }
   else { b.textContent = '📍 Lacak Lokasi'; b.classList.remove('active'); }
 }
+function showLive(latlng, accuracy) {
+  if (!liveMarker) {
+    liveMarker = L.marker(latlng, {
+      icon: L.divIcon({ className: 'live-dot', html: '<div class="live-dot-inner"></div>', iconSize: [18, 18], iconAnchor: [9, 9] }),
+      zIndexOffset: 1000
+    }).addTo(map);
+  } else {
+    liveMarker.setLatLng(latlng);
+  }
+  if (accuracy && accuracy < 100000) {
+    if (!liveCircle) liveCircle = L.circle(latlng, { radius: accuracy, color: '#1a73e8', weight: 1, fillColor: '#1a73e8', fillOpacity: 0.15 }).addTo(map);
+    else liveCircle.setLatLng(latlng).setRadius(accuracy);
+  }
+}
+function clearLive() {
+  if (liveMarker) { map.removeLayer(liveMarker); liveMarker = null; }
+  if (liveCircle) { map.removeLayer(liveCircle); liveCircle = null; }
+}
 function startWatch() {
+  if (!navigator.geolocation) { status('Perangkat tidak mendukung Geolocation.', 'err'); return; }
   watching = true;
   firstFix = true;
-  map.locate({ watch: true, enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
+  watchId = navigator.geolocation.watchPosition(
+    pos => {
+      const latlng = L.latLng(pos.coords.latitude, pos.coords.longitude);
+      $('latInput').value = pos.coords.latitude.toFixed(6);
+      $('lngInput').value = pos.coords.longitude.toFixed(6);
+      showLive(latlng, pos.coords.accuracy);
+      if (firstFix) { map.setView(latlng, Math.max(map.getZoom(), 16)); firstFix = false; }
+      else map.panTo(latlng);
+    },
+    err => {
+      status('Gagal melacak lokasi: ' + (err.message || 'izin ditolak'), 'err');
+      watching = false; updateWatchBtn(); clearLive();
+    },
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+  );
   status('Melacak lokasi secara realtime (mirip Google Maps)…');
 }
 function stopWatch() {
   watching = false;
-  map.stopLocate();
-  firstFix = true;
+  if (watchId != null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
+  clearLive();
   status('Pelacakan dihentikan.');
 }
 $('liveTrackBtn').addEventListener('click', () => {
-  if (!navigator.geolocation) { status('Perangkat tidak mendukung Geolocation.', 'err'); return; }
   if (watching) stopWatch(); else startWatch();
   updateWatchBtn();
-});
-map.on('locationfound', e => {
-  $('latInput').value = e.latlng.lat.toFixed(6);
-  $('lngInput').value = e.latlng.lng.toFixed(6);
-  if (watching) {
-    if (firstFix) { map.setView(e.latlng, Math.max(map.getZoom(), 16)); firstFix = false; }
-    else map.panTo(e.latlng);
-  }
-});
-map.on('locationerror', e => {
-  status('Gagal melacak lokasi: ' + (e.message || 'izin ditolak'), 'err');
-  watching = false; updateWatchBtn();
 });
 
 // ---------- Gaya ----------
