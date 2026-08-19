@@ -268,6 +268,11 @@
           </div>
         </div>
     </div>
+    <div class="section" id="loadedListSection" style="display:none;">
+      <h2>Daftar Titik (file)</h2>
+      <div class="layers" id="loadedList"></div>
+      <div style="font-size:11px; color:var(--muted); margin-top:6px;">Klik baris untuk mengisi koordinat &amp; menuju titik.</div>
+    </div>
     <div class="section" id="drawListSection" style="display:none;">
       <h2>Daftar &amp; Properti</h2>
       <div class="layers" id="drawList"></div>
@@ -393,6 +398,13 @@ function escapeHtml(s) {
   return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
+// Isi input koordinat (Latitude/Longitude) dari posisi yang diklik
+function fillCoordInputs(latlng) {
+  if (!latlng) return;
+  $('latInput').value = latlng.lat.toFixed(6);
+  $('lngInput').value = latlng.lng.toFixed(6);
+}
+
 // ---------- Render GeoJSON ----------
 function renderGeoJSON(geojson, sourceName) {
   // Validasi dasar
@@ -418,6 +430,14 @@ function renderGeoJSON(geojson, sourceName) {
         feature.properties.luas_ha = +ha.toFixed(2);
       }
       layer.bindPopup(popupContent(feature));
+      // Klik fitur -> koordinat muncul di menu input (Lat/Long)
+      layer.on('click', () => {
+        if (feature.geometry && feature.geometry.type === 'Point') {
+          fillCoordInputs(L.latLng(feature.geometry.coordinates[1], feature.geometry.coordinates[0]));
+        } else if (layer.getCenter) {
+          fillCoordInputs(layer.getCenter());
+        }
+      });
     }
   });
 
@@ -477,7 +497,48 @@ function renderGeoJSON(geojson, sourceName) {
   $('dataNode').style.display = 'block';
   $('dataNode').open = true;
 
+  // Daftar titik/fitur dari file (nama + koordinat)
+  buildLoadedList();
+
   status(`Berhasil memuat: ${stats.total} fitur dari ${sourceName}.`, 'ok');
+}
+
+// Daftar semua titik/fitur dari file yang dimuat (nama + koordinat).
+// Klik baris -> isi input lat/lng dan lompat ke titik.
+function buildLoadedList() {
+  const el = $('loadedList');
+  el.innerHTML = '';
+  const feats = [];
+  if (currentLayer) {
+    currentLayer.eachLayer(l => {
+      const f = l.feature || {};
+      const p = f.properties || {};
+      const g = f.geometry || {};
+      let latlng = null;
+      if (g.type === 'Point' && g.coordinates) latlng = L.latLng(g.coordinates[1], g.coordinates[0]);
+      else if (l.getCenter) latlng = l.getCenter();
+      if (!latlng) return;
+      const name = p.name || p.Name || p.nama || p.title || p.label ||
+        (p.jenis === 'waypoint' ? 'Titik ' + (feats.length + 1) : 'Fitur ' + (feats.length + 1));
+      feats.push({ name: String(name), latlng });
+    });
+  }
+  feats.forEach(f => {
+    const row = document.createElement('div');
+    row.className = 'layer';
+    row.style.cursor = 'pointer';
+    row.title = 'Klik untuk mengisi koordinat & menuju titik';
+    row.innerHTML = `
+      <span style="width:18px; text-align:center;">📍</span>
+      <span class="name">${escapeHtml(f.name)}</span>
+      <span style="color:var(--muted); font-size:11px; white-space:nowrap;">${f.latlng.lat.toFixed(5)}, ${f.latlng.lng.toFixed(5)}</span>`;
+    row.addEventListener('click', () => {
+      fillCoordInputs(f.latlng);
+      map.setView(f.latlng, Math.max(map.getZoom(), 15));
+    });
+    el.appendChild(row);
+  });
+  $('loadedListSection').style.display = feats.length ? 'block' : 'none';
 }
 
 function renderStats(stats, name) {
@@ -560,6 +621,8 @@ function clearMap() {
   $('styleSection').style.display = 'none';
   $('dataNode').style.display = 'none';
   $('dataNode').open = false;
+  $('loadedList').innerHTML = '';
+  $('loadedListSection').style.display = 'none';
 }
 
 // ---------- File input & drag/drop ----------
@@ -584,7 +647,7 @@ drop.addEventListener('drop', e => {
 function gpxToGeoJSON(text) {
   const xml = new DOMParser().parseFromString(text, 'application/xml');
   if (xml.getElementsByTagName('parsererror').length) throw new Error('XML GPX tidak valid');
-  const byLocal = (root, name) => Array.from(root.getElementsByTagName('*')).filter(e => e.localName === name);
+  const byLocal = (root, name) => Array.from(root.getElementsByTagName('*')).filter(e => name === '*' || e.localName === name);
   const propsOf = el => {
     const p = {};
     byLocal(el, '*').forEach(c => {
@@ -887,6 +950,11 @@ function addItem(type, name, layer) {
     layer.feature.properties.luas_ha = +area.toFixed(2);
   }
   layer.bindPopup(popupContent(layer.feature));
+  // Klik fitur yang digambar -> koordinat muncul di menu input (Lat/Long)
+  layer.on('click', () => {
+    const ll = layer.getLatLng ? layer.getLatLng() : (layer.getCenter ? layer.getCenter() : null);
+    fillCoordInputs(ll);
+  });
   drawItems.push({ id: Date.now() + Math.random(), type, name, layer, area });
   renderDrawList();
   $('drawListSection').style.display = 'block';

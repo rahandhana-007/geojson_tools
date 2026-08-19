@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="Test">
+  <wpt lat="3.595200" lon="98.672200">
+    <name>Pohon Sawit A1</name>
+    <desc>Blok 1 - baris 1</desc>
+    <ele>45.2</ele>
+  </wpt>
+  <wpt lat="3.596000" lon="98.673500">
+    <name>Pohon Sawit A2</name>
+    <desc>Blok 1 - baris 2</desc>
+  </wpt>
+  <wpt lat="3.594100" lon="98.674800">
+    <name>Pagar Utara</name>
+  </wpt>
+  <trk><name>Jalur Panen</name>
+    <trkseg>
+      <trkpt lat="3.59" lon="98.67"/>
+      <trkpt lat="3.60" lon="98.68"/>
+    </trkseg>
+  </trk>
+</gpx>
