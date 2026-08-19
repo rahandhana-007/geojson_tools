@@ -122,6 +122,19 @@
   .leaflet-container { background: #0b1220; }
   .hint { position: absolute; bottom: 12px; left: 12px; z-index: 500; background: #0009; color: #fff; padding: 6px 10px; border-radius: 8px; font-size: 12px; }
 
+  /* Tree menu nodes (akordeon) */
+  details.node { background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  details.node > summary {
+    list-style: none; cursor: pointer; padding: 10px 12px; font-size: 13px; font-weight: 600;
+    color: var(--text); display: flex; align-items: center; gap: 8px; user-select: none;
+  }
+  details.node > summary::-webkit-details-marker { display: none; }
+  details.node > summary::before { content: '▸'; color: var(--accent); transition: transform .15s; font-size: 11px; }
+  details.node[open] > summary::before { transform: rotate(90deg); }
+  details.node > summary:hover { background: #0b3a4a; }
+  .node-body { padding: 12px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 10px; }
+  details.node .section { box-shadow: none; }
+
   @media (max-width: 720px) {
     #app { flex-direction: column; }
     #sidebar { width: 100%; min-width: 0; max-height: 45vh; }
@@ -137,11 +150,14 @@
       <div class="sub">Purchasing Dept - Raw Material Team | By AR</div>
     </div>
 
+    <details class="node" open>
+      <summary>📂 Buka &amp; Muat Data</summary>
+      <div class="node-body">
     <div class="drop" id="drop">
       <div>📂 Seret & lepas file GeoJSON ke sini</div>
       <small>atau klik untuk memilih (.geojson, .json)</small>
     </div>
-    <input type="file" id="file" accept=".geojson,.json,application/geo+json,application/json" />
+    <input type="file" id="file" accept=".geojson,.json,.gpx,application/geo+json,application/json,application/gpx+xml" />
 
     <div class="row">
       <button id="sampleBtn">Contoh Data</button>
@@ -158,8 +174,14 @@
       </div>
       <button class="primary" id="urlBtn" style="width:100%;">Muat URL</button>
     </div>
+      </div>
+    </details>
 
     <div class="section">
+    <details class="node">
+      <summary>📂 Peta Offline (Sumatera Utara)</summary>
+      <div class="node-body">
+      <div class="section">
       <h2>Peta Offline (Sumatera Utara)</h2>
       <div style="font-size:12px; color:var(--muted); margin-bottom:6px;">Bbox (W, S, E, N):</div>
       <div class="row" style="gap:4px;">
@@ -182,6 +204,12 @@
       <button id="clearTilesBtn" style="width:100%; margin-top:8px;">🗑️ Hapus Cache Peta</button>
     </div>
 
+    <div class="section">
+      </div>
+    </details>
+    <details class="node" open>
+      <summary>📂 Buat GeoJSON (Maker)</summary>
+      <div class="node-body">
     <div class="section">
       <h2>Buat GeoJSON (Maker)</h2>
       <div class="row" style="flex-wrap:wrap; gap:6px;">
@@ -237,6 +265,11 @@
       <div class="layers" id="drawList"></div>
     </div>
 
+      </div>
+    </details>
+    <details class="node">
+      <summary>🎨 Gaya Tampilan</summary>
+      <div class="node-body">
     <div class="section" id="styleSection" style="display:none;">
       <h2>Gaya Tampilan</h2>
       <div class="field">
@@ -258,6 +291,11 @@
       <button id="applyStyle" style="width:100%;">Terapkan Gaya</button>
     </div>
 
+      </div>
+    </details>
+    <details class="node" id="dataNode" style="display:none;">
+      <summary>📊 Data &amp; Lapisan</summary>
+      <div class="node-body">
     <div class="section" id="infoSection" style="display:none;">
       <h2>Informasi</h2>
       <div id="stats"></div>
@@ -268,6 +306,8 @@
       <div class="layers" id="layers"></div>
     </div>
 
+      </div>
+    </details>
     <div id="status"></div>
   </div>
 
@@ -426,6 +466,8 @@ function renderGeoJSON(geojson, sourceName) {
   renderStats(stats, sourceName);
   $('infoSection').style.display = 'block';
   $('styleSection').style.display = 'block';
+  $('dataNode').style.display = 'block';
+  $('dataNode').open = true;
 
   status(`Berhasil memuat: ${stats.total} fitur dari ${sourceName}.`, 'ok');
 }
@@ -508,6 +550,8 @@ function clearMap() {
   $('infoSection').style.display = 'none';
   $('layersSection').style.display = 'none';
   $('styleSection').style.display = 'none';
+  $('dataNode').style.display = 'none';
+  $('dataNode').open = false;
 }
 
 // ---------- File input & drag/drop ----------
@@ -528,14 +572,70 @@ drop.addEventListener('drop', e => {
   if (f) readFile(f);
 });
 
+// ---------- Parser GPX -> GeoJSON ----------
+function gpxToGeoJSON(text) {
+  const xml = new DOMParser().parseFromString(text, 'application/xml');
+  if (xml.getElementsByTagName('parsererror').length) throw new Error('XML GPX tidak valid');
+  const byLocal = (root, name) => Array.from(root.getElementsByTagName('*')).filter(e => e.localName === name);
+  const propsOf = el => {
+    const p = {};
+    byLocal(el, '*').forEach(c => {
+      if (c.childNodes.length === 1 && c.firstChild.nodeType === 3) {
+        const t = c.textContent.trim();
+        if (t) p[c.localName] = t;
+      }
+    });
+    return p;
+  };
+  const features = [];
+  byLocal(xml, 'wpt').forEach(w => {
+    const lat = parseFloat(w.getAttribute('lat')), lon = parseFloat(w.getAttribute('lon'));
+    if (isNaN(lat) || isNaN(lon)) return;
+    features.push({ type: 'Feature', geometry: { type: 'Point', coordinates: [lon, lat] }, properties: Object.assign({ jenis: 'waypoint' }, propsOf(w)) });
+  });
+  byLocal(xml, 'trk').forEach(trk => {
+    const nm = (byLocal(trk, 'name')[0] && byLocal(trk, 'name')[0].textContent) || 'Track';
+    byLocal(trk, 'trkseg').forEach(seg => {
+      const coords = [];
+      byLocal(seg, 'trkpt').forEach(pt => {
+        const lat = parseFloat(pt.getAttribute('lat')), lon = parseFloat(pt.getAttribute('lon'));
+        if (!isNaN(lat) && !isNaN(lon)) coords.push([lon, lat]);
+      });
+      if (coords.length) features.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: coords }, properties: { name: nm, jenis: 'track' } });
+    });
+  });
+  byLocal(xml, 'rte').forEach(rte => {
+    const nm = (byLocal(rte, 'name')[0] && byLocal(rte, 'name')[0].textContent) || 'Route';
+    const coords = [];
+    byLocal(rte, 'rtept').forEach(pt => {
+      const lat = parseFloat(pt.getAttribute('lat')), lon = parseFloat(pt.getAttribute('lon'));
+      if (!isNaN(lat) && !isNaN(lon)) coords.push([lon, lat]);
+    });
+    if (coords.length) features.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: coords }, properties: { name: nm, jenis: 'route' } });
+  });
+  if (!features.length) throw new Error('Tidak ada track/route/waypoint ditemukan');
+  return { type: 'FeatureCollection', name: 'GPX', features };
+}
+
+// Deteksi & parsing teks (GeoJSON atau GPX)
+function parseLoadedText(text, name) {
+  const t = (text || '').trim();
+  if (/<gpx/i.test(t) || /\.gpx$/i.test(name || '')) {
+    const gj = gpxToGeoJSON(text);
+    renderGeoJSON(gj, name || 'gpx');
+    return;
+  }
+  const data = JSON.parse(t);
+  renderGeoJSON(data, name || 'geojson');
+}
+
 function readFile(file) {
   const reader = new FileReader();
   reader.onload = () => {
     try {
-      const data = JSON.parse(reader.result);
-      renderGeoJSON(data, file.name);
+      parseLoadedText(reader.result, file.name);
     } catch (err) {
-      status('Gagal mem-parsing JSON: ' + err.message, 'err');
+      status('Gagal memproses file: ' + err.message, 'err');
     }
   };
   reader.onerror = () => status('Gagal membaca file.', 'err');
@@ -550,8 +650,9 @@ $('urlBtn').addEventListener('click', async () => {
   try {
     const res = await fetch(url, { mode: 'cors' });
     if (!res.ok) throw new Error('HTTP ' + res.status);
-    const data = await res.json();
-    renderGeoJSON(data, url.split('/').pop() || url);
+    const text = await res.text();
+    try { parseLoadedText(text, url.split('/').pop() || url); }
+    catch (err) { status('Gagal memproses (bukan GeoJSON/GPX): ' + err.message, 'err'); }
   } catch (err) {
     status('Gagal memuat URL (mungkin CORS): ' + err.message, 'err');
   }
