@@ -36,16 +36,24 @@
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     background: var(--bg); color: var(--text);
   }
-  #app { display: flex; height: 100vh; }
-
-  /* Sidebar */
-  #sidebar {
-    width: 340px; min-width: 340px; background: var(--panel);
-    border-right: 1px solid var(--border);
-    display: flex; flex-direction: column; padding: 16px; gap: 14px;
-    overflow-y: auto;
+  #app {
+    display: flex; flex-direction: column; height: 100vh; height: 100dvh;
+    overflow: hidden;
   }
-  #sidebar h1 { font-size: 18px; margin: 0 0 4px; display: flex; align-items: center; gap: 8px; }
+
+  #topbar {
+    flex: 0 0 auto;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    padding: 8px 12px;
+    display: flex; flex-direction: column; gap: 8px;
+    z-index: 800;
+  }
+  #topbar .brand {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  }
+  #topbar h1 { font-size: 16px; margin: 0; display: flex; align-items: center; gap: 8px; }
+  #sidebar { display: contents; }
   #sidebar h1 .dot {
     width: 10px; height: 10px; border-radius: 50%;
     background: #22c55e; box-shadow: 0 0 8px #22c55e;
@@ -68,10 +76,17 @@
     70%  { box-shadow: 0 0 0 12px rgba(26,115,232,0); }
     100% { box-shadow: 0 0 0 0 rgba(26,115,232,0); }
   }
-  .sub { color: var(--muted); font-size: 12px; margin-top: -6px; }
+  .sub { color: var(--muted); font-size: 11px; }
+
+  .toolbar-row {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  }
+  .toolbar-row .drop { flex: 1 1 180px; min-width: 140px; padding: 8px 10px; }
+  .toolbar-row input#urlInput { min-width: 180px; flex: 1 1 200px; }
+  button.tool { flex: 0 0 auto; }
 
   .drop {
-    border: 2px dashed var(--border); border-radius: 10px; padding: 18px 12px;
+    border: 2px dashed var(--border); border-radius: 10px; padding: 10px 12px;
     text-align: center; cursor: pointer; transition: .15s; background: var(--panel-2);
   }
   .drop:hover, .drop.drag { border-color: var(--accent); background: #0b3a4a; }
@@ -114,13 +129,30 @@
   #status.err { display: block; background: #7f1d1d; color: var(--err); }
 
   /* Map */
-  #map { flex: 1; height: 100%; background: #0b1220; }
+  #map { flex: 1 1 auto; min-height: 0; width: 100%; background: #0b1220; }
   .popup-prop { font-size: 12px; max-height: 220px; overflow: auto; }
   .popup-prop table { border-collapse: collapse; width: 100%; }
   .popup-prop td { padding: 3px 6px; border-bottom: 1px solid #ddd; vertical-align: top; }
   .popup-prop td.k { font-weight: 600; color: #333; white-space: nowrap; }
   .leaflet-container { background: #0b1220; }
   .hint { position: absolute; bottom: 12px; left: 12px; z-index: 500; background: #0009; color: #fff; padding: 6px 10px; border-radius: 8px; font-size: 12px; }
+
+  #bottombar {
+    flex: 0 0 auto;
+    max-height: 38vh;
+    background: var(--panel);
+    border-top: 1px solid var(--border);
+    overflow: auto;
+    padding: 8px 12px 10px;
+    display: flex; flex-direction: column; gap: 8px;
+    z-index: 800;
+  }
+  #bottombar .panels {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 8px;
+    align-items: start;
+  }
 
   /* Tree menu nodes (akordeon) */
   details.node { background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
@@ -145,39 +177,43 @@
 <body>
 <div id="app">
   <div id="sidebar">
-    <div>
+  <header id="topbar">
+    <div class="brand">
       <h1><span class="dot"></span> GeoJson Tools</h1>
       <div class="sub">Purchasing Dept - Raw Material Team | By AR</div>
     </div>
-
-    <details class="node" open>
-      <summary>📂 Buka &amp; Muat Data</summary>
-      <div class="node-body">
-    <div class="drop" id="drop">
-      <div>📂 Seret & lepas file GeoJSON ke sini</div>
-      <small>atau klik untuk memilih (.geojson, .json)</small>
-    </div>
-    <input type="file" id="file" accept=".geojson,.json,.gpx,application/geo+json,application/json,application/gpx+xml" />
-
-    <div class="row">
+    <div class="toolbar-row">
+      <div class="drop" id="drop">
+        <div>📂 Seret &amp; lepas / klik file GeoJSON</div>
+        <small>.geojson, .json, .gpx</small>
+      </div>
+      <input type="file" id="file" accept=".geojson,.json,.gpx,application/geo+json,application/json,application/gpx+xml" />
       <button id="sampleBtn">Contoh Data</button>
       <button id="clearBtn">Bersihkan</button>
+      <button id="bsreBtn">🗺️ Load BSRE</button>
+      <input type="text" id="urlInput" placeholder="https://.../data.geojson" style="display:block; background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:8px; padding:9px;" />
+      <button class="primary" id="urlBtn">Muat URL</button>
     </div>
-    <div class="row" style="margin-top:8px;">
-      <button id="bsreBtn">🗺️ Load BSRE Geojson</button>
+    <div class="toolbar-row">
+      <button class="tool active" data-mode="select">🖱️ Pilih</button>
+      <button class="tool" data-mode="point">📍 Titik</button>
+      <button class="tool" data-mode="line">📏 Garis</button>
+      <button class="tool" data-mode="polygon">▱ Polygon</button>
+      <button id="undoBtn">↩️ Hapus Terakhir</button>
+      <button id="clearDrawBtn">🗑️ Bersihkan Gambar</button>
+      <input type="text" id="featName" placeholder="Nama fitur" style="display:block; flex:0 1 140px; background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:8px; padding:7px; min-width:0;" />
+      <input type="text" id="mapName" placeholder="Nama peta" style="display:block; flex:0 1 140px; background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:8px; padding:7px; min-width:0;" />
+      <button class="primary" id="exportBtn">⬇️ Unduh GeoJSON</button>
     </div>
+  </header>
 
-    <div class="section">
-      <h2>Muat dari URL</h2>
-      <div class="row" style="margin-bottom:8px;">
-        <input type="text" id="urlInput" placeholder="https://.../data.geojson" style="display:block; flex:1; background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:8px; padding:9px;" />
-      </div>
-      <button class="primary" id="urlBtn" style="width:100%;">Muat URL</button>
-    </div>
-      </div>
-    </details>
+  <div id="map">
+    <div class="hint">Klik sebuah fitur pada peta untuk melihat propertinya.</div>
+  </div>
 
-    <div class="section">
+  <footer id="bottombar">
+    <div id="status"></div>
+    <div class="panels">
     <details class="node">
       <summary>📂 Peta Offline (Sumatera Utara)</summary>
       <div class="node-body">
@@ -203,32 +239,13 @@
       <div id="dlRegionStatus" style="font-size:12px; margin-top:6px; color:var(--muted);">Siap. Perkiraan tile dihitung saat mulai.</div>
       <button id="clearTilesBtn" style="width:100%; margin-top:8px;">🗑️ Hapus Cache Peta</button>
     </div>
-
-    <div class="section">
       </div>
     </details>
     <details class="node" open>
-      <summary>📂 Buat GeoJSON (Maker)</summary>
+      <summary>📍 Koordinat &amp; Daftar</summary>
       <div class="node-body">
     <div class="section">
-      <h2>Buat GeoJSON (Maker)</h2>
-      <div class="row" style="flex-wrap:wrap; gap:6px;">
-        <button class="tool active" data-mode="select">🖱️ Pilih</button>
-        <button class="tool" data-mode="point">📍 Titik</button>
-        <button class="tool" data-mode="line">📏 Garis</button>
-        <button class="tool" data-mode="polygon">▱ Polygon</button>
-      </div>
-      <div class="row" style="margin-top:8px;">
-        <button id="undoBtn">↩️ Hapus Terakhir</button>
-        <button id="clearDrawBtn">🗑️ Bersihkan</button>
-      </div>
-      <div class="field" style="margin-top:8px;">
-        <label>Nama fitur</label>
-        <input type="text" id="featName" placeholder="mis. Titik A" style="display:block; flex:1; background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:8px; padding:7px; min-width:0;" />
-      </div>
-
-      <div style="margin-top:10px; border-top:1px solid var(--border); padding-top:10px;">
-        <div style="font-size:12px; color:var(--muted); margin-bottom:6px;">Input Koordinat (1 titik)</div>
+      <h2>Input Koordinat</h2>
         <div class="row">
           <input type="text" id="latInput" placeholder="Latitude" style="display:block; flex:1; background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:8px; padding:7px; min-width:0;" />
           <input type="text" id="lngInput" placeholder="Longitude" style="display:block; flex:1; background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:8px; padding:7px; min-width:0;" />
@@ -241,7 +258,6 @@
           <button id="addToListBtn">➕ Add this coordinate</button>
           <button id="liveTrackBtn">📍 Lacak Lokasi</button>
         </div>
-
         <div style="margin-top:10px;">
           <div style="font-size:12px; color:var(--muted); margin-bottom:4px;">Banyak koordinat (1 pasang per baris):</div>
           <textarea id="pasteCoord" rows="3" placeholder="Tempel dari Google Maps, mis:&#10;-6.208763, 106.845630&#10;-6.210000, 106.850000&#10;-6.205000, 106.840000" style="display:block; width:100%; background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:8px; padding:7px; resize:vertical; font-size:12px; min-width:0;"></textarea>
@@ -251,20 +267,11 @@
             <button id="pastePolyBtn">▱ Polygon</button>
           </div>
         </div>
-      </div>
-
-      <div class="field" style="margin-top:8px;">
-        <label>Nama Peta</label>
-        <input type="text" id="mapName" placeholder="mis. Kebun_A" style="display:block; flex:1; background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:8px; padding:7px; min-width:0;" />
-      </div>
-      <button class="primary" id="exportBtn" style="width:100%; margin-top:8px;">⬇️ Unduh GeoJSON</button>
     </div>
-
     <div class="section" id="drawListSection" style="display:none;">
       <h2>Daftar &amp; Properti</h2>
       <div class="layers" id="drawList"></div>
     </div>
-
       </div>
     </details>
     <details class="node">
@@ -290,7 +297,6 @@
       </div>
       <button id="applyStyle" style="width:100%;">Terapkan Gaya</button>
     </div>
-
       </div>
     </details>
     <details class="node" id="dataNode" style="display:none;">
@@ -300,19 +306,14 @@
       <h2>Informasi</h2>
       <div id="stats"></div>
     </div>
-
     <div class="section" id="layersSection" style="display:none;">
       <h2>Lapisan (Layer)</h2>
       <div class="layers" id="layers"></div>
     </div>
-
       </div>
     </details>
-    <div id="status"></div>
-  </div>
-
-  <div id="map">
-    <div class="hint">Klik sebuah fitur pada peta untuk melihat propertinya.</div>
+    </div>
+  </footer>
   </div>
 </div>
 
@@ -325,6 +326,8 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   subdomains: 'a',
   attribution: '&copy; OpenStreetMap'
 }).addTo(map);
+setTimeout(() => map.invalidateSize(), 80);
+window.addEventListener('resize', () => map.invalidateSize());
 
 // ---------- State ----------
 let currentLayer = null;       // L.GeoJSON layer group
