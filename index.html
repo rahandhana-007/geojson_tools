@@ -298,11 +298,11 @@
       <h2>Gaya Tampilan</h2>
       <div class="field">
         <label>Warna garis/polygon</label>
-        <input type="color" id="color" value="#38bdf8" />
+        <input type="color" id="color" value="#8bd25b" />
       </div>
       <div class="field">
         <label>Warna isi</label>
-        <input type="color" id="fill" value="#38bdf8" />
+        <input type="color" id="fill" value="#8bd25b" />
       </div>
       <div class="field">
         <label>Ketebalan garis</label>
@@ -354,7 +354,7 @@ window.addEventListener('resize', () => map.invalidateSize());
 // ---------- State ----------
 let currentLayer = null;       // L.GeoJSON layer group
 let layerGroups = {};          // nama layer -> sub group (berdasarkan properti)
-let activeStyle = { color:'#38bdf8', fill:'#38bdf8', weight:3, fillOpacity:0.35 };
+let activeStyle = { color:'#8bd25b', fill:'#8bd25b', weight:3, fillOpacity:0.35 };
 
 // ---------- Util ----------
 const $ = id => document.getElementById(id);
@@ -418,21 +418,32 @@ function fillCoordInputs(latlng) {
 }
 
 // ---------- Render GeoJSON ----------
-function renderGeoJSON(geojson, sourceName) {
+function renderGeoJSON(geojson, sourceName, palette) {
   // Validasi dasar
   if (!geojson || typeof geojson !== 'object' || !geojson.type) {
     status('Bukan file GeoJSON yang valid (tidak ada properti "type").', 'err');
     return;
   }
 
+  // Warna efektif: palette (mis. BSRE biru, file lain hijau) menimpa gaya aktif
+  const effStyle = palette
+    ? Object.assign({}, activeStyle, { color: palette.color, fill: palette.fill })
+    : activeStyle;
+
   // Bersihkan layer lama
   clearMap();
 
   currentLayer = L.geoJSON(geojson, {
-    style: geoJSONStyle,
+    style: () => ({
+      color: effStyle.color,
+      weight: effStyle.weight,
+      fillColor: effStyle.fill,
+      fillOpacity: effStyle.fillOpacity,
+      opacity: 1
+    }),
     pointToLayer: (feature, latlng) => L.circleMarker(latlng, {
-      radius: 6, color: activeStyle.color, weight: activeStyle.weight,
-      fillColor: activeStyle.fill, fillOpacity: 0.9
+      radius: 6, color: effStyle.color, weight: effStyle.weight,
+      fillColor: effStyle.fill, fillOpacity: 0.9
     }),
     onEachFeature: (feature, layer) => {
       if (feature.geometry && feature.geometry.type === 'Polygon') {
@@ -476,13 +487,16 @@ function renderGeoJSON(geojson, sourceName) {
     const overlay = {};
     const colors = {};
     Object.keys(layerGroups).forEach(k => {
-      colors[k] = layerGroups[k]._color;
+      // Jika ada palette (BSRE/file), semua grup memakai warna palette;
+      // selain itu warna acak per grup.
+      const gColor = palette ? palette.color : layerGroups[k]._color;
+      colors[k] = gColor;
       layerGroups[k].setStyle({
-        color: layerGroups[k]._color,
-        fillColor: layerGroups[k]._color
+        color: gColor,
+        fillColor: gColor
       });
       layerGroups[k].eachLayer(l => {
-        if (l.setStyle) l.setStyle({ color: layerGroups[k]._color, fillColor: layerGroups[k]._color });
+        if (l.setStyle) l.setStyle({ color: gColor, fillColor: gColor });
       });
       layerGroups[k].addTo(map);
       overlay[k] = layerGroups[k];
@@ -701,15 +715,16 @@ function gpxToGeoJSON(text) {
 }
 
 // Deteksi & parsing teks (GeoJSON atau GPX)
+const GREEN_STYLE = { color:'#8bd25b', fill:'#8bd25b' };
 function parseLoadedText(text, name) {
   const t = (text || '').trim();
   if (/<gpx/i.test(t) || /\.gpx$/i.test(name || '')) {
     const gj = gpxToGeoJSON(text);
-    renderGeoJSON(gj, name || 'gpx');
+    renderGeoJSON(gj, name || 'gpx', GREEN_STYLE);
     return;
   }
   const data = JSON.parse(t);
-  renderGeoJSON(data, name || 'geojson');
+  renderGeoJSON(data, name || 'geojson', GREEN_STYLE);
 }
 
 function readFile(file) {
@@ -754,7 +769,7 @@ $('toolToggle').addEventListener('click', () => {
 });
 $('sampleBtn').addEventListener('click', () => loadSample());
 $('bsreBtn').addEventListener('click', () => {
-  if (window.BSRE_GEOJSON) renderGeoJSON(window.BSRE_GEOJSON, 'BSRE Geojson');
+  if (window.BSRE_GEOJSON) renderGeoJSON(window.BSRE_GEOJSON, 'BSRE Geojson', { color:'#38bdf8', fill:'#38bdf8' });
   else status('Data BSRE tidak tersedia (bsre-data.js tidak dimuat).', 'err');
 });
 
@@ -1226,7 +1241,7 @@ function loadSample() {
       { "type":"Feature", "properties":{"layer":"Area","name":"Lingkaran Contoh"}, "geometry":{"type":"Polygon","coordinates":[[[106.8,-6.1],[107.0,-6.1],[107.0,-6.3],[106.8,-6.3],[106.8,-6.1]]]} }
     ]
   };
-  renderGeoJSON(sample, 'contoh.geojson');
+  renderGeoJSON(sample, 'contoh.geojson', GREEN_STYLE);
 }
 
 // Tidak ada auto-load: peta terbuka kosong tanpa GeoJSON.
