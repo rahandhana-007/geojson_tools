@@ -136,6 +136,16 @@
   .popup-prop td.k { font-weight: 600; color: #333; white-space: nowrap; }
   .leaflet-container { background: #0b1220; }
   .hint { position: absolute; bottom: 12px; left: 12px; z-index: 500; background: #0009; color: #fff; padding: 6px 10px; border-radius: 8px; font-size: 12px; }
+  .map-legend {
+    position: absolute; top: 12px; right: 12px; z-index: 500;
+    background: #0f172ae6; color: #e2e8f0; padding: 8px 10px; border-radius: 8px;
+    font-size: 12px; border: 1px solid #475569; min-width: 160px;
+    box-shadow: 0 4px 16px #0005;
+  }
+  .map-legend .lg-title { font-weight: 600; margin-bottom: 6px; color: #94a3b8; font-size: 11px; text-transform: uppercase; letter-spacing: .4px; }
+  .map-legend .lg-row { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
+  .map-legend .lg-sw { width: 14px; height: 14px; border-radius: 3px; border: 1px solid #0006; flex: 0 0 auto; }
+  .map-legend .lg-empty { color: #94a3b8; }
 
   #bottombar {
     flex: 0 0 auto;
@@ -209,6 +219,18 @@
 
   <div id="map">
     <div class="hint">Klik sebuah fitur pada peta untuk melihat propertinya.</div>
+    <div class="map-legend" id="mapLegend">
+      <div class="lg-title">Warna polygon</div>
+      <div class="lg-empty" id="legendEmpty">Belum ada layer</div>
+      <div class="lg-row" id="legendBsre" style="display:none;">
+        <span class="lg-sw" style="background:#38bdf8;"></span>
+        <span>BSRE · RGB(56, 189, 248)</span>
+      </div>
+      <div class="lg-row" id="legendFile" style="display:none;">
+        <span class="lg-sw" style="background:#8bd25b;"></span>
+        <span>File GeoJSON · RGB(139, 210, 91)</span>
+      </div>
+    </div>
   </div>
 
   <footer id="bottombar">
@@ -330,9 +352,19 @@ setTimeout(() => map.invalidateSize(), 80);
 window.addEventListener('resize', () => map.invalidateSize());
 
 // ---------- State ----------
-let currentLayer = null;       // L.GeoJSON layer group
+let currentLayer = null;       // L.GeoJSON layer terakhir yang dimuat
+let bsreLayer = null;          // layer khusus tombol Load BSRE
+let fileLayer = null;          // layer file/URL/contoh (bukan BSRE)
 let layerGroups = {};          // nama layer -> sub group (berdasarkan properti)
-let activeStyle = { color:'#38bdf8', fill:'#38bdf8', weight:3, fillOpacity:0.35 };
+// BSRE: R=56 G=189 B=248  |  file browse: R=139 G=210 B=91
+const COLOR_BSRE = '#38bdf8';
+const COLOR_FILE = '#8bd25b';
+const STYLE_PRESETS = {
+  bsre: { color: COLOR_BSRE, fill: COLOR_BSRE, weight: 3, fillOpacity: 0.35 },
+  file: { color: COLOR_FILE, fill: COLOR_FILE, weight: 3, fillOpacity: 0.35 }
+};
+let activeStyle = { ...STYLE_PRESETS.bsre };
+let lastPreset = 'file';
 
 // ---------- Util ----------
 const $ = id => document.getElementById(id);
@@ -343,13 +375,38 @@ function status(msg, type) {
 }
 
 function geoJSONStyle(feature) {
+  const st = (feature && feature._sourceStyle) || activeStyle;
   return {
-    color: activeStyle.color,
-    weight: activeStyle.weight,
-    fillColor: activeStyle.fill,
-    fillOpacity: activeStyle.fillOpacity,
+    color: st.color,
+    weight: st.weight,
+    fillColor: st.fill,
+    fillOpacity: st.fillOpacity,
     opacity: 1
   };
+}
+
+function setActiveStyleFromPreset(preset) {
+  const src = STYLE_PRESETS[preset] || STYLE_PRESETS.file;
+  activeStyle = { ...src };
+  lastPreset = preset === 'bsre' ? 'bsre' : 'file';
+  if ($('color')) $('color').value = activeStyle.color;
+  if ($('fill')) $('fill').value = activeStyle.fill;
+  if ($('weight')) $('weight').value = activeStyle.weight;
+  if ($('fillOp')) $('fillOp').value = Math.round(activeStyle.fillOpacity * 100);
+}
+
+function styleForPreset(preset) {
+  return { ...(STYLE_PRESETS[preset] || STYLE_PRESETS.file) };
+}
+
+function removeGeoJsonLayer(layer) {
+  if (!layer) return;
+  if (layer._groups) {
+    Object.values(layer._groups).forEach(g => {
+      if (map.hasLayer(g)) map.removeLayer(g);
+    });
+  }
+  if (map.hasLayer(layer)) map.removeLayer(layer);
 }
 
 function popupContent(feature) {
@@ -389,79 +446,129 @@ function escapeHtml(s) {
 }
 
 // ---------- Render GeoJSON ----------
-function renderGeoJSON(geojson, sourceName) {
+// preset: 'bsre' (cyan R56 G189 B248) atau 'file' (hijau R139 G210 B91)
+function renderGeoJSON(geojson, sourceName, preset) {
   // Validasi dasar
   if (!geojson || typeof geojson !== 'object' || !geojson.type) {
     status('Bukan file GeoJSON yang valid (tidak ada properti "type").', 'err');
     return;
   }
 
-  // Bersihkan layer lama
-  clearMap();
+  preset = preset === 'bsre' ? 'bsre' : 'file';
+  const slotStyle = styleForPreset(preset);
+  setActiveStyleFromPreset(preset);
 
-  currentLayer = L.geoJSON(geojson, {
-    style: geoJSONStyle,
-    pointToLayer: (feature, latlng) => L.circleMarker(latlng, {
-      radius: 6, color: activeStyle.color, weight: activeStyle.weight,
-      fillColor: activeStyle.fill, fillOpacity: 0.9
+  // Ganti hanya layer slot yang sama; layer lain (BSRE vs file browse) tetap tampil
+  if (preset === 'bsre') {
+    removeGeoJsonLayer(bsreLayer);
+    bsreLayer = null;
+  } else {
+    removeGeoJsonLayer(fileLayer);
+    fileLayer = null;
+  }
+
+  const layer = L.geoJSON(geojson, {
+    style: () => ({
+      color: slotStyle.color,
+      weight: slotStyle.weight,
+      fillColor: slotStyle.fill,
+      fillOpacity: slotStyle.fillOpacity,
+      opacity: 1
     }),
-    onEachFeature: (feature, layer) => {
-      if (feature.geometry && feature.geometry.type === 'Polygon') {
-        const ring = feature.geometry.coordinates[0].map(c => [c[1], c[0]]); // [lng,lat] -> [lat,lng]
-        const ha = polygonAreaHectares(ring);
+    pointToLayer: (feature, latlng) => L.circleMarker(latlng, {
+      radius: 6, color: slotStyle.color, weight: slotStyle.weight,
+      fillColor: slotStyle.fill, fillOpacity: 0.9
+    }),
+    onEachFeature: (feature, lyr) => {
+      feature._sourceStyle = slotStyle;
+      feature._sourcePreset = preset;
+      if (feature.geometry && (feature.geometry.type === 'Polygon' || feature.geometry.type === 'MultiPolygon')) {
         feature.properties = feature.properties || {};
-        feature.properties.luas_ha = +ha.toFixed(2);
+        if (feature.geometry.type === 'Polygon') {
+          const ring = feature.geometry.coordinates[0].map(c => [c[1], c[0]]);
+          feature.properties.luas_ha = +polygonAreaHectares(ring).toFixed(2);
+        } else {
+          let ha = 0;
+          feature.geometry.coordinates.forEach(poly => {
+            if (poly && poly[0]) ha += polygonAreaHectares(poly[0].map(c => [c[1], c[0]]));
+          });
+          feature.properties.luas_ha = +ha.toFixed(2);
+        }
       }
-      layer.bindPopup(popupContent(feature));
+      lyr.bindPopup(popupContent(feature));
     }
   });
 
-  // Kelompokkan berdasarkan properti "layer"/"name"/"Layer" kalau ada
-  layerGroups = {};
+  layer._sourceName = sourceName;
+  layer._sourcePreset = preset;
+  layer._sourceStyle = slotStyle;
+  layer._groups = {};
+
+  // Kelompokkan berdasarkan properti, tetapi tetap pakai warna sumber (bukan acak)
+  const groups = {};
   let grouped = false;
-  currentLayer.eachLayer(l => {
+  layer.eachLayer(l => {
     const p = (l.feature && l.feature.properties) || {};
     let key = null;
-    for (const cand of ['layer','Layer','name','Name','nama','kategori','category']) {
-      if (p[cand] !== undefined && p[cand] !== null) { key = String(p[cand]); break; }
+    for (const cand of ['layer','Layer','kategori','category']) {
+      if (p[cand] !== undefined && p[cand] !== null && String(p[cand]).trim() !== '') {
+        key = String(p[cand]);
+        break;
+      }
     }
     if (key) {
       grouped = true;
-      if (!layerGroups[key]) {
-        layerGroups[key] = L.featureGroup();
-        layerGroups[key]._color = randomColor(key);
+      const gkey = (preset === 'bsre' ? 'BSRE · ' : '') + key;
+      if (!groups[gkey]) {
+        groups[gkey] = L.featureGroup();
+        groups[gkey]._color = slotStyle.color;
+        groups[gkey]._sourcePreset = preset;
       }
-      layerGroups[key].addLayer(l);
+      groups[gkey].addLayer(l);
     }
   });
 
-  if (grouped) {
-    const overlay = {};
-    const colors = {};
-    Object.keys(layerGroups).forEach(k => {
-      colors[k] = layerGroups[k]._color;
-      layerGroups[k].setStyle({
-        color: layerGroups[k]._color,
-        fillColor: layerGroups[k]._color
+  layer._groups = groups;
+
+  if (grouped && Object.keys(groups).length) {
+    Object.keys(groups).forEach(k => {
+      groups[k].setStyle({
+        color: slotStyle.color,
+        fillColor: slotStyle.fill,
+        weight: slotStyle.weight,
+        fillOpacity: slotStyle.fillOpacity
       });
-      layerGroups[k].eachLayer(l => {
-        if (l.setStyle) l.setStyle({ color: layerGroups[k]._color, fillColor: layerGroups[k]._color });
+      groups[k].eachLayer(l => {
+        if (l.setStyle) l.setStyle({
+          color: slotStyle.color,
+          fillColor: slotStyle.fill,
+          weight: slotStyle.weight,
+          fillOpacity: l instanceof L.CircleMarker ? 0.9 : slotStyle.fillOpacity
+        });
       });
-      layerGroups[k].addTo(map);
-      overlay[k] = layerGroups[k];
+      groups[k].addTo(map);
     });
-    L.control.layers(null, overlay, { collapsed: false }).addTo(map);
-    buildLayerList(colors);
-    $('layersSection').style.display = 'block';
+    // fitur tanpa properti layer tetap ditampilkan di parent
+    if (layer.getLayers().length) layer.addTo(map);
   } else {
-    currentLayer.addTo(map);
-    $('layersSection').style.display = 'none';
+    layer.addTo(map);
   }
 
-  // Auto-fit
+  if (preset === 'bsre') bsreLayer = layer;
+  else fileLayer = layer;
+  currentLayer = layer;
+
+  refreshSourceLayerList();
+
+  // Auto-fit ke layer yang baru dimuat (termasuk jika fitur dipindah ke group)
   try {
-    const bounds = currentLayer.getBounds();
-    if (bounds.isValid()) map.fitBounds(bounds, { padding: [30, 30] });
+    let bounds = null;
+    if (grouped && Object.keys(groups).length) {
+      bounds = L.featureGroup(Object.values(groups)).getBounds();
+    } else {
+      bounds = layer.getBounds();
+    }
+    if (bounds && bounds.isValid()) map.fitBounds(bounds, { padding: [30, 30] });
   } catch(e) { map.setView([0,0],2); }
 
   // Statistik
@@ -472,7 +579,8 @@ function renderGeoJSON(geojson, sourceName) {
   $('dataNode').style.display = 'block';
   $('dataNode').open = true;
 
-  status(`Berhasil memuat: ${stats.total} fitur dari ${sourceName}.`, 'ok');
+  const colorLabel = preset === 'bsre' ? 'cyan RGB(56,189,248)' : 'hijau RGB(139,210,91)';
+  status(`Berhasil memuat: ${stats.total} fitur dari ${sourceName} (${colorLabel}).`, 'ok');
 }
 
 function renderStats(stats, name) {
@@ -504,6 +612,10 @@ function computeStats(geojson) {
       if (g.geometry && g.geometry.type === 'Polygon') {
         const ring = g.geometry.coordinates[0].map(c => [c[1], c[0]]); // [lng,lat] -> [lat,lng]
         areaHa += polygonAreaHectares(ring);
+      } else if (g.geometry && g.geometry.type === 'MultiPolygon') {
+        g.geometry.coordinates.forEach(poly => {
+          if (poly && poly[0]) areaHa += polygonAreaHectares(poly[0].map(c => [c[1], c[0]]));
+        });
       }
     } else if (g.type === 'FeatureCollection') {
       (g.features||[]).forEach(walk);
@@ -517,16 +629,92 @@ function computeStats(geojson) {
   return { total, types, bbox: geojson.bbox, areaHa };
 }
 
-function buildLayerList(colors) {
+function countLayerFeatures(layer) {
+  if (!layer) return 0;
+  if (layer._groups && Object.keys(layer._groups).length) {
+    return Object.values(layer._groups).reduce((n, g) => n + g.getLayers().length, 0);
+  }
+  return layer.getLayers ? layer.getLayers().length : 0;
+}
+
+function toggleLayerVisibility(layer, show) {
+  if (!layer) return;
+  if (layer._groups && Object.keys(layer._groups).length) {
+    Object.values(layer._groups).forEach(g => {
+      if (show) g.addTo(map);
+      else if (map.hasLayer(g)) map.removeLayer(g);
+    });
+  }
+  if (layer.getLayers && layer.getLayers().length) {
+    if (show) layer.addTo(map);
+    else if (map.hasLayer(layer)) map.removeLayer(layer);
+  }
+}
+
+function updateMapLegend() {
+  const empty = $('legendEmpty');
+  const bsre = $('legendBsre');
+  const file = $('legendFile');
+  if (!empty || !bsre || !file) return;
+  const hasAny = !!(bsreLayer || fileLayer);
+  empty.style.display = hasAny ? 'none' : 'block';
+  bsre.style.display = bsreLayer ? 'flex' : 'none';
+  file.style.display = fileLayer ? 'flex' : 'none';
+}
+
+function refreshSourceLayerList() {
+  updateMapLegend();
   const el = $('layers');
   el.innerHTML = '';
+  layerGroups = {};
+
+  const items = [];
+  if (bsreLayer) {
+    items.push({
+      id: 'src-bsre',
+      name: bsreLayer._sourceName || 'BSRE',
+      color: COLOR_BSRE,
+      layer: bsreLayer
+    });
+    Object.assign(layerGroups, bsreLayer._groups || {});
+  }
+  if (fileLayer) {
+    items.push({
+      id: 'src-file',
+      name: fileLayer._sourceName || 'GeoJSON',
+      color: COLOR_FILE,
+      layer: fileLayer
+    });
+    Object.assign(layerGroups, fileLayer._groups || {});
+  }
+
+  if (!items.length) {
+    $('layersSection').style.display = 'none';
+    return;
+  }
+
+  items.forEach(it => {
+    const count = countLayerFeatures(it.layer);
+    const row = document.createElement('div');
+    row.className = 'layer';
+    row.innerHTML = `
+      <input type="checkbox" checked data-id="${escapeHtml(it.id)}" />
+      <span class="swatch" style="background:${it.color}"></span>
+      <span class="name" title="${escapeHtml(it.name)}">${escapeHtml(it.name)}</span>
+      <span class="cnt">${count}</span>`;
+    row.querySelector('input').addEventListener('change', e => {
+      toggleLayerVisibility(it.layer, e.target.checked);
+    });
+    el.appendChild(row);
+  });
+
   Object.keys(layerGroups).sort().forEach(k => {
     const count = layerGroups[k].getLayers().length;
     const row = document.createElement('div');
     row.className = 'layer';
     row.innerHTML = `
       <input type="checkbox" checked data-key="${escapeHtml(k)}" />
-      <span class="swatch" style="background:${colors[k]}"></span>
+      <span class="swatch" style="background:${layerGroups[k]._color}"></span>
       <span class="name" title="${escapeHtml(k)}">${escapeHtml(k)}</span>
       <span class="cnt">${count}</span>`;
     row.querySelector('input').addEventListener('change', e => {
@@ -535,6 +723,12 @@ function buildLayerList(colors) {
     });
     el.appendChild(row);
   });
+
+  $('layersSection').style.display = 'block';
+}
+
+function buildLayerList(colors) {
+  refreshSourceLayerList();
 }
 
 function randomColor(seed) {
@@ -544,9 +738,11 @@ function randomColor(seed) {
 
 // ---------- Bersihkan ----------
 function clearMap() {
-  if (currentLayer) { map.removeLayer(currentLayer); currentLayer = null; }
-  // hapus control layers lama
-  map.eachLayer(l => { if (l instanceof L.Control.Layers) map.removeControl(l); });
+  removeGeoJsonLayer(bsreLayer);
+  removeGeoJsonLayer(fileLayer);
+  bsreLayer = null;
+  fileLayer = null;
+  currentLayer = null;
   layerGroups = {};
   $('stats').innerHTML = '';
   $('layers').innerHTML = '';
@@ -555,6 +751,7 @@ function clearMap() {
   $('styleSection').style.display = 'none';
   $('dataNode').style.display = 'none';
   $('dataNode').open = false;
+  updateMapLegend();
 }
 
 // ---------- File input & drag/drop ----------
@@ -625,11 +822,11 @@ function parseLoadedText(text, name) {
   const t = (text || '').trim();
   if (/<gpx/i.test(t) || /\.gpx$/i.test(name || '')) {
     const gj = gpxToGeoJSON(text);
-    renderGeoJSON(gj, name || 'gpx');
+    renderGeoJSON(gj, name || 'gpx', 'file');
     return;
   }
   const data = JSON.parse(t);
-  renderGeoJSON(data, name || 'geojson');
+  renderGeoJSON(data, name || 'geojson', 'file');
 }
 
 function readFile(file) {
@@ -665,7 +862,7 @@ $('urlBtn').addEventListener('click', async () => {
 $('clearBtn').addEventListener('click', () => { clearMap(); status(''); });
 $('sampleBtn').addEventListener('click', () => loadSample());
 $('bsreBtn').addEventListener('click', () => {
-  if (window.BSRE_GEOJSON) renderGeoJSON(window.BSRE_GEOJSON, 'BSRE Geojson');
+  if (window.BSRE_GEOJSON) renderGeoJSON(window.BSRE_GEOJSON, 'BSRE Geojson', 'bsre');
   else status('Data BSRE tidak tersedia (bsre-data.js tidak dimuat).', 'err');
 });
 
@@ -776,6 +973,37 @@ $('liveTrackBtn').addEventListener('click', () => {
 });
 
 // ---------- Gaya ----------
+function applyStyleToGeoLayer(layer, style) {
+  if (!layer) return;
+  const stroke = style.color;
+  const fill = style.fill;
+  const weight = style.weight;
+  const fillOpacity = style.fillOpacity;
+  const apply = l => {
+    if (!l || !l.setStyle) return;
+    if (l instanceof L.CircleMarker) {
+      l.setStyle({ color: stroke, fillColor: fill, weight, fillOpacity: 0.9 });
+    } else {
+      l.setStyle({ color: stroke, fillColor: fill, weight, fillOpacity, opacity: 1 });
+    }
+  };
+  if (layer._groups && Object.keys(layer._groups).length) {
+    Object.values(layer._groups).forEach(g => {
+      g._color = stroke;
+      g.eachLayer(apply);
+    });
+  }
+  if (layer.getLayers && layer.getLayers().length) {
+    layer.setStyle({ color: stroke, fillColor: fill, weight, fillOpacity, opacity: 1 });
+    layer.eachLayer(l => {
+      if (l instanceof L.CircleMarker) {
+        l.setStyle({ color: stroke, fillColor: fill, weight, fillOpacity: 0.9 });
+      }
+    });
+  }
+  layer._sourceStyle = { ...style };
+}
+
 $('applyStyle').addEventListener('click', () => {
   activeStyle = {
     color: $('color').value,
@@ -783,15 +1011,9 @@ $('applyStyle').addEventListener('click', () => {
     weight: +$('weight').value,
     fillOpacity: +$('fillOp').value / 100
   };
-  if (currentLayer) {
-    currentLayer.setStyle(geoJSONStyle);
-    currentLayer.eachLayer(l => {
-      if (l instanceof L.CircleMarker) {
-        l.setStyle({ color: activeStyle.color, fillColor: activeStyle.fill, weight: activeStyle.weight });
-      }
-    });
-  }
-  status('Gaya diterapkan.', 'ok');
+  applyStyleToGeoLayer(currentLayer, activeStyle);
+  refreshSourceLayerList();
+  status('Gaya diterapkan ke layer terakhir.', 'ok');
 });
 
 // ---------- GeoJSON Maker (gambar di peta) ----------
@@ -1132,7 +1354,7 @@ function loadSample() {
       { "type":"Feature", "properties":{"layer":"Area","name":"Lingkaran Contoh"}, "geometry":{"type":"Polygon","coordinates":[[[106.8,-6.1],[107.0,-6.1],[107.0,-6.3],[106.8,-6.3],[106.8,-6.1]]]} }
     ]
   };
-  renderGeoJSON(sample, 'contoh.geojson');
+  renderGeoJSON(sample, 'contoh.geojson', 'file');
 }
 
 // Tidak ada auto-load: peta terbuka kosong tanpa GeoJSON.
